@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ночной калейдоскоп</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Manrope:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: full-bleed canvas as the "object chamber", title plate top-left, brass control strip along the bottom. */
+  :root {
+    --ink: #0d0b14;          /* night glass behind the mirrors */
+    --plate: rgba(22, 18, 32, 0.78);
+    --line: rgba(236, 230, 245, 0.14);
+    --fg: #ece6f5;
+    --muted: #a197b5;
+    --brass: #f2b84b;        /* the tube's brass fittings */
+    --brass-ink: #1b1406;
+    --f-display: "Unbounded", "Trebuchet MS", system-ui, sans-serif;
+    --f-body: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--ink);
+    color: var(--fg);
+    font: 14px/1.5 var(--f-body);
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+  canvas#stage {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    touch-action: none;
+    cursor: crosshair;
+    display: block;
+  }
+
+  .plate {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 16px);
+    left: 16px;
+    max-width: min(22rem, calc(100% - 32px));
+    display: grid; gap: 4px;
+    pointer-events: none;
+  }
+  .plate h1 {
+    margin: 0;
+    font: 700 clamp(1.15rem, 3.4vw, 1.6rem)/1.1 var(--f-display);
+    letter-spacing: 0.01em;
+    text-wrap: balance;
+  }
+  .plate p { margin: 0; color: var(--muted); }
+  .readout {
+    font: 500 12px/1.4 var(--f-mono);
+    color: var(--brass);
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .strip {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    padding: 12px 16px calc(env(safe-area-inset-bottom, 0px) + 12px);
+    background: var(--plate);
+    border-top: 1px solid var(--line);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    display: flex; flex-wrap: wrap; gap: 10px 18px;
+    align-items: center;
+  }
+  .group { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+  .label {
+    font: 500 11px/1 var(--f-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .seg button {
+    border: 0; background: transparent; color: var(--fg);
+    font: 500 12px/1 var(--f-mono);
+    padding: 8px 11px; cursor: pointer;
+    font-variant-numeric: tabular-nums;
+  }
+  .seg button[aria-pressed="true"] { background: var(--brass); color: var(--brass-ink); }
+  .swatches { display: flex; gap: 6px; }
+  .swatches button {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 2px solid transparent; cursor: pointer; padding: 0;
+    background: var(--sw);
+  }
+  .swatches button[aria-pressed="true"] { border-color: var(--fg); }
+  input[type="range"] { accent-color: var(--brass); width: 96px; }
+  .actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    font: 600 13px/1 var(--f-body);
+    padding: 9px 14px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--line); background: transparent; color: var(--fg);
+  }
+  .btn[aria-pressed="true"] { border-color: var(--brass); color: var(--brass); }
+  .btn.primary { background: var(--brass); color: var(--brass-ink); border-color: var(--brass); }
+  button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+  .shot {
+    position: fixed; inset: 0;
+    background: rgba(13, 11, 20, 0.92);
+    display: grid; place-items: center;
+    padding: 24px 16px;
+  }
+  .shot figure { margin: 0; display: grid; gap: 12px; justify-items: center; max-width: 100%; }
+  .shot img {
+    max-width: min(100%, 560px); max-height: 65vh;
+    border-radius: 50%;
+    box-shadow: 0 0 0 6px var(--brass), 0 20px 60px rgba(0, 0, 0, 0.6);
+  }
+  .shot figcaption { color: var(--muted); text-align: center; max-width: 40ch; }
+  .shot .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .shot a.btn { text-decoration: none; }
+
+  @media (max-width: 560px) {
+    .actions { margin-left: 0; }
+    input[type="range"] { width: 80px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" aria-label="Холст калейдоскопа: проведите мышью или пальцем, чтобы рисовать"></canvas>
+
+<header class="plate">
+  <h1>Ночной калейдоскоп</h1>
+  <p>Ведите мышью или пальцем — узор отразится в зеркалах.</p>
+  <div class="readout" id="readout">зеркала 30° · 12 отражений</div>
+</header>
+
+<nav class="strip" aria-label="Настройки калейдоскопа">
+  <div class="group">
+    <span class="label" id="lbl-sym">Сектора</span>
+    <div class="seg" role="group" aria-labelledby="lbl-sym" id="sym">
+      <button type="button" data-n="3">3</button>
+      <button type="button" data-n="4">4</button>
+      <button type="button" data-n="6" aria-pressed="true">6</button>
+      <button type="button" data-n="8">8</button>
+      <button type="button" data-n="12">12</button>
+    </div>
+  </div>
+  <div class="group">
+    <span class="label" id="lbl-pal">Стекло</span>
+    <div class="swatches" role="group" aria-labelledby="lbl-pal" id="pal">
+      <button type="button" data-p="prism" title="Призма" aria-label="Призма" aria-pressed="true"
+        style="--sw: conic-gradient(#ff5a7a, #ffcb47, #5be3a5, #4fa3ff, #b06bff, #ff5a7a)"></button>
+      <button type="button" data-p="brass" title="Латунь" aria-label="Латунь"
+        style="--sw: linear-gradient(135deg, #ffd27a, #c4672a)"></button>
+      <button type="button" data-p="lagoon" title="Лагуна" aria-label="Лагуна"
+        style="--sw: linear-gradient(135deg, #6ff3e0, #2f6bff)"></button>
+      <button type="button" data-p="fuchsia" title="Фуксия" aria-label="Фуксия"
+        style="--sw: linear-gradient(135deg, #ff8de1, #7a3cff)"></button>
+    </div>
+  </div>
+  <div class="group">
+    <label class="label" for="size">Кисть</label>
+    <input type="range" id="size" min="2" max="40" value="12">
+  </div>
+  <div class="actions">
+    <button type="button" class="btn" id="mirror" aria-pressed="true" title="Отражать в зеркалах (M)">Зеркала</button>
+    <button type="button" class="btn" id="fade" aria-pressed="false" title="Узор медленно тает (F)">Угасание</button>
+    <button type="button" class="btn" id="auto" aria-pressed="true" title="Рисует сам (пробел)">Автопилот</button>
+    <button type="button" class="btn" id="clear" title="Очистить (C)">Очистить</button>
+    <button type="button" class="btn primary" id="snap" title="Снимок (S)">Снимок</button>
+  </div>
+</nav>
+
+<div class="shot" id="shot" hidden>
+  <figure>
+    <img id="shot-img" alt="Снимок вашего узора">
+    <figcaption>Щёлкните правой кнопкой или удерживайте палец на картинке, чтобы сохранить её.</figcaption>
+    <div class="row">
+      <a class="btn primary" id="shot-dl" download="kaleidoscope.png" hidden>Скачать PNG</a>
+      <button type="button" class="btn" id="shot-close">Вернуться к рисованию</button>
+    </div>
+  </figure>
+</div>
+
+<script>
+(() => {
+  const BG = "#0d0b14";
+  const canvas = document.getElementById("stage");
+  const ctx = canvas.getContext("2d");
+  const $ = (id) => document.getElementById(id);
+
+  const state = {
+    n: 6, mirror: true, fade: false, auto: true,
+    palette: "prism", size: 12, hue: 0,
+  };
+
+  const palettes = {
+    prism:   (t) => [t % 360, 88, 64],
+    brass:   (t) => [25 + 22 * Math.sin(t / 40), 90, 60],
+    lagoon:  (t) => [195 + 28 * Math.sin(t / 50), 85, 62],
+    fuchsia: (t) => [305 + 30 * Math.sin(t / 45), 85, 66],
+  };
+
+  let W = 0, H = 0, dpr = 1;
+  function resize() {
+    const prev = W ? (() => {
+      const c = document.createElement("canvas");
+      c.width = canvas.width; c.height = canvas.height;
+      c.getContext("2d").drawImage(canvas, 0, 0);
+      return c;
+    })() : null;
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = BG; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (prev) ctx.drawImage(prev, (canvas.width - prev.width) / 2, (canvas.height - prev.height) / 2);
+  }
+
+  function clearCanvas() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = BG; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // Centre of the chamber sits slightly above the control strip.
+  const centre = () => [W / 2, (H - stripHeight()) / 2 + 20];
+  const stripHeight = () => document.querySelector(".strip").offsetHeight;
+
+  function segment(x1, y1, x2, y2, width, colour, core) {
+    const [cx, cy] = centre();
+    const step = (Math.PI * 2) / state.n;
+    ctx.lineCap = "round";
+    for (let i = 0; i < state.n; i++) {
+      for (const flip of state.mirror ? [1, -1] : [1]) {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.translate(cx, cy);
+        ctx.rotate(i * step);
+        ctx.scale(1, flip);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+        ctx.strokeStyle = colour; ctx.lineWidth = width; ctx.stroke();
+        ctx.strokeStyle = core; ctx.lineWidth = Math.max(1, width * 0.28); ctx.stroke();
+      }
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  function stroke(from, to) {
+    const dx = to[0] - from[0], dy = to[1] - from[1];
+    const speed = Math.hypot(dx, dy);
+    if (speed < 0.5) return;
+    state.hue += 0.6 + speed * 0.05;
+    const [h, s, l] = palettes[state.palette](state.hue);
+    const width = state.size * Math.min(1, Math.max(0.35, 1 - speed / 70));
+    const [cx, cy] = centre();
+    segment(from[0] - cx, from[1] - cy, to[0] - cx, to[1] - cy, width,
+      `hsla(${h}, ${s}%, ${l}%, 0.45)`, `hsla(${h}, ${s}%, ${Math.min(92, l + 22)}%, 0.95)`);
+  }
+
+  // ---- Pointer drawing ----
+  let last = null;
+  canvas.addEventListener("pointerdown", (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    last = [e.clientX, e.clientY];
+    setAuto(false);
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!last) return;
+    const p = [e.clientX, e.clientY];
+    stroke(last, p); last = p;
+  });
+  const end = () => { last = null; };
+  canvas.addEventListener("pointerup", end);
+  canvas.addEventListener("pointercancel", end);
+
+  // ---- Autopilot: a wandering rose curve ----
+  let t = Math.random() * 1000, autoPrev = null;
+  function autoPoint() {
+    const [cx, cy] = centre();
+    const R = Math.min(W, H - stripHeight()) * 0.42;
+    const r = R * (0.55 + 0.45 * Math.sin(t * 0.013)) * Math.sin(t * 0.021 + Math.sin(t * 0.004) * 2);
+    const a = t * 0.017 + Math.sin(t * 0.007);
+    return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+  }
+  function autoStep() {
+    t += 1;
+    const p = autoPoint();
+    if (autoPrev) stroke(autoPrev, p);
+    autoPrev = p;
+  }
+
+  function frame() {
+    if (state.fade) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = "rgba(13, 11, 20, 0.035)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    if (state.auto) { autoStep(); autoStep(); }
+    requestAnimationFrame(frame);
+  }
+
+  // ---- Controls ----
+  function press(group, btn) {
+    group.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+  }
+  function updateReadout() {
+    $("readout").textContent = state.mirror
+      ? `зеркала ${+(180 / state.n).toFixed(1)}° · ${state.n * 2} отражений`
+      : `без зеркал · поворот ×${state.n}`;
+  }
+  function setAuto(on) {
+    state.auto = on; autoPrev = null;
+    $("auto").setAttribute("aria-pressed", String(on));
+  }
+  function toggle(id, key) {
+    state[key] = !state[key];
+    $(id).setAttribute("aria-pressed", String(state[key]));
+    if (key === "mirror") updateReadout();
+  }
+
+  $("sym").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    state.n = +b.dataset.n; press($("sym"), b); updateReadout();
+  });
+  $("pal").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    state.palette = b.dataset.p; press($("pal"), b);
+  });
+  $("size").addEventListener("input", (e) => { state.size = +e.target.value; });
+  $("mirror").addEventListener("click", () => toggle("mirror", "mirror"));
+  $("fade").addEventListener("click", () => toggle("fade", "fade"));
+  $("auto").addEventListener("click", () => setAuto(!state.auto));
+  $("clear").addEventListener("click", clearCanvas);
+  $("snap").addEventListener("click", snapshot);
+  $("shot-close").addEventListener("click", () => { $("shot").hidden = true; });
+
+  // Downloads only work when the page is opened directly, not inside an embedded viewer.
+  const embedded = (() => { try { return window.top !== window.self; } catch { return true; } })();
+
+  function snapshot() {
+    const url = canvas.toDataURL("image/png");
+    $("shot-img").src = url;
+    const dl = $("shot-dl");
+    dl.href = url; dl.hidden = embedded;
+    $("shot").hidden = false;
+    $("shot-close").focus();
+  }
+
+  window.addEventListener("keydown", (e) => {
+    if (e.target.matches("input")) return;
+    const k = e.key.toLowerCase();
+    if (k === "escape") $("shot").hidden = true;
+    else if (k === "c" || k === "с") clearCanvas();
+    else if (k === "s" || k === "ы") snapshot();
+    else if (k === "m" || k === "ь") toggle("mirror", "mirror");
+    else if (k === "f" || k === "а") toggle("fade", "fade");
+    else if (k === " ") { e.preventDefault(); setAuto(!state.auto); }
+    else if (/^[1-5]$/.test(k)) $("sym").querySelectorAll("button")[+k - 1].click();
+  });
+
+  window.addEventListener("resize", resize);
+  resize();
+
+  // Seed a finished pattern so the first frame is never empty.
+  for (let i = 0; i < 420; i++) autoStep();
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) setAuto(false);
+  updateReadout();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
